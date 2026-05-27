@@ -5,7 +5,6 @@
   "gemini_preview_max_size": 1280,
   "gemini_confidence_threshold": 0.65,
   "gemini_retry_on_low_confidence": true,
-
   "api_endpoint": "https://api.remove.bg/v1.0/removebg",
   "auth_header_name": "X-Api-Key",
   "image_field_name": "image_file",
@@ -13,14 +12,12 @@
     "size": "auto",
     "format": "png"
   },
-
   "canvas_size": 1600,
   "product_max_size": 1400,
   "mode": "standard",
   "cost_per_api_call": 0.05,
   "max_cost_per_mpn_standard": 0.3,
   "max_cost_per_mpn_test": 0.5,
-
   "remove_background_flow": "gemini_guided_opencv",
   "fallback_mode": "removebg_api_then_opencv",
   "local_bg_threshold": 28,
@@ -30,7 +27,7 @@
   "preserve_text_on_product": true,
   "keep_small_accessories": true,
   "opencv_bbox_expand_ratio": 0.08,
-
+  "source_trim_uniform_border": false,
   "create_output_subfolder": true,
   "output_subfolder_name": "output",
   "frame_safe_margin_left": 130,
@@ -48,7 +45,6 @@
   "scale_down_step": 0.96,
   "max_fit_attempts": 12,
   "allowed_frame_overlap_ratio": 0.0005,
-
   "qa_after_compose": true,
   "qa_retry_once": true,
   "save_debug_files": true

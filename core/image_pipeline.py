@@ -17,7 +17,6 @@ from .mask_cleaner import (
     load_image_rgb,
     make_preview,
     plain_opencv_remove,
-    preclean_remove_regions,
     refine_alpha,
     rgba_from_mask,
     scale_analysis,
@@ -131,13 +130,14 @@ def _remove_with_gemini_guided_opencv(
     if not ok:
         raise GeminiVisionError(reason)
 
-    work_image = preclean_remove_regions(image, analysis) if config.preclean_text_regions else image
+    # v3: OpenCV only edits the alpha mask. Do not inpaint or alter RGB pixels
+    # before masking; Gemini remove_regions are applied directly to alpha.
     if debug_dir:
-        work_image.save(debug_dir / f"{stem}_03_preclean.jpg", quality=95)
+        image.save(debug_dir / f"{stem}_03_mask_source_rgb_unchanged.jpg", quality=95)
 
     component_mode = _component_mode_from_analysis(config, analysis)
     mask = guided_opencv_mask(
-        work_image,
+        image,
         analysis,
         threshold=config.local_bg_threshold,
         bbox_expand_ratio=config.opencv_bbox_expand_ratio,
@@ -290,11 +290,12 @@ def process_product_folder(
     for img_path in images:
         try:
             image = load_image_rgb(img_path)
-            image = trim_uniform_border(image)
+            if getattr(config, "source_trim_uniform_border", False):
+                image = trim_uniform_border(image)
             debug_dir = debug_root / img_path.stem if debug_root else None
             if debug_dir:
                 debug_dir.mkdir(parents=True, exist_ok=True)
-                image.save(debug_dir / f"{img_path.stem}_00_input_trimmed.jpg", quality=95)
+                image.save(debug_dir / f"{img_path.stem}_00_input_rgb_unchanged.jpg", quality=95)
 
             rgba, remove_note, api_cost, analysis = _background_remove(
                 image,

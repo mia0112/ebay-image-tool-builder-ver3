@@ -1,0 +1,20 @@
+eBay Image Tool fixed-v3
+=========================
+
+Core flow is preserved:
+Gemini analyze -> OpenCV alpha-mask removal/cleanup -> add frame.
+
+Important fixes:
+- Gemini product_bbox is only a soft hint; it is never used as a hard crop.
+- OpenCV keeps the original RGB pixels in the final cutout and only edits alpha.
+- Source-image crop/trim is disabled by default to avoid cutting product edges.
+- Improved alpha cleanup for grey/black listing borders and bottom disclaimer text.
+- Improved protection for keep_regions so small screws/clips/brackets are retained.
+- Frame composer keeps aspect ratio and searches more placements/scales.
+- If no collision-free frame placement is possible, the frame is placed under the product as a safety fallback so it cannot cover the product.
+
+
+V3.1 update:
+- Giu nguyen flow Gemini -> OpenCV -> frame cua v3.
+- Giam viền đen/con sót dọc mép bằng rebuild silhouette cho single-object mask.
+- Giam xoa nen lem nhem / lỗ thủng nhỏ trong san pham bang cach fill cac lo alpha nho, nhung van giu cac lo cau truc lon (vi du center bore).

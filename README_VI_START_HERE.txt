@@ -3,7 +3,7 @@ eBay Image Tool - Gemini Guided OpenCV
 
 Muc tieu:
 - Gemini nhin anh truoc de xac dinh san pham, phu kien can giu, chu/watermark can xoa.
-- OpenCV xu ly pixel that: xoa nen, clean mask, giu phu kien nho.
+- OpenCV xu ly alpha mask: xoa nen/listing border/disclaimer, giu RGB anh goc va giu phu kien nho.
 - Tool tu can san pham vao frame sao cho to hon nhung khong bi frame de.
 
 Cach dung nhanh:
@@ -23,7 +23,7 @@ Neu save_debug_files=true, moi anh se co debug trong:
 output/debug/<ten_anh>/
 - preview gui Gemini
 - JSON Gemini analysis
-- anh preclean
+- anh source RGB khong doi dung de tao mask
 - mask PNG
 - cutout PNG
 - QA JSON
@@ -40,7 +40,16 @@ Config quan trong:
 - frame_collision_check: true
 
 Luu y:
-- Khong dung Gemini de ve lai san pham. Gemini chi phan tich va tra JSON.
+- Khong dung Gemini de ve lai san pham. Gemini chi phan tich va tra JSON hint mem: product_bbox, keep_regions, remove_regions.
 - Neu anh co nhieu oc, long den, lo xo, phe cai, tool se uu tien giu chung thay vi xoa nhu rac.
 - Neu san pham bi nho trong frame, tang nhe max_product_width_ratio / max_product_height_ratio.
 - Neu san pham bi frame de, giam max_product_width_ratio / max_product_height_ratio hoac tang frame_clearance_px.
+
+- v3 khong crop cung theo Gemini bbox va khong dung OpenCV de chinh RGB output; OpenCV chi sua alpha mask.
+- Resize vao frame giu nguyen ty le; frame collision safety dam bao frame khong de len san pham.
+
+
+V3.1 update:
+- Giu nguyen flow Gemini -> OpenCV -> frame cua v3.
+- Giam viền đen/con sót dọc mép bằng rebuild silhouette cho single-object mask.
+- Giam xoa nen lem nhem / lỗ thủng nhỏ trong san pham bang cach fill cac lo alpha nho, nhung van giu cac lo cau truc lon (vi du center bore).

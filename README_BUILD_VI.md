@@ -1,12 +1,12 @@
 # eBay Image Tool - Build Standalone
 
-## Flow moi
+## Flow v3
 
 ```text
 Image input
 → Gemini generateContent phân tích ảnh và trả JSON
-→ OpenCV xoá chữ nền / watermark theo JSON
-→ OpenCV tạo mask sản phẩm, giữ phụ kiện nhỏ
+→ OpenCV chỉ sửa alpha mask: xoá nền, viền listing, chữ nền/disclaimer
+→ OpenCV giữ RGB ảnh gốc, giữ phụ kiện nhỏ
 → Auto-fit sản phẩm vào frame
 → Collision check tránh frame đè lên sản phẩm
 → Gemini QA final nếu có API key
@@ -48,3 +48,12 @@ core/frame_composer.py
 core/image_pipeline.py
 core/api_bg_remove.py
 ```
+
+
+## Ghi chú v3
+
+- Không crop cứng theo Gemini `product_bbox`; bbox chỉ dùng để ưu tiên giữ/xoá vùng mềm.
+- Không inpaint/chỉnh RGB ảnh gốc trong output; OpenCV chỉ tạo và clean alpha mask.
+- Resize khi add frame luôn giữ nguyên tỷ lệ sản phẩm.
+- Source trim mặc định tắt (`source_trim_uniform_border=false`) để tránh cắt mất sản phẩm.
+- Nếu không fit được tuyệt đối trong frame, tool sẽ đặt frame dưới sản phẩm ở bước safety để frame không đè lên sản phẩm.

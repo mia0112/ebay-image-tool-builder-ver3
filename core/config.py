@@ -49,6 +49,7 @@ class AppConfig:
     preserve_text_on_product: bool = True
     keep_small_accessories: bool = True
     opencv_bbox_expand_ratio: float = 0.08
+    source_trim_uniform_border: bool = False
 
     # Frame fitting
     create_output_subfolder: bool = True

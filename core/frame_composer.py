@@ -19,6 +19,12 @@ class FitResult:
 
 
 def crop_alpha(rgba: Image.Image, padding: int = 8) -> Image.Image:
+    """Crop by alpha only, with padding, never by Gemini bbox.
+
+    This removes empty transparent space after background removal without
+    changing product proportions. If the alpha touches an edge, the crop keeps
+    that edge, so already-cut source products are not cut further.
+    """
     rgba = rgba.convert("RGBA")
     arr = np.array(rgba)
     alpha = arr[:, :, 3]
@@ -64,11 +70,22 @@ def _candidate_positions(safe_rect: Tuple[int, int, int, int], product_size: Tup
     pw, ph = product_size
     cx = sx + (sw - pw) // 2
     cy = sy + (sh - ph) // 2
-    offsets = [
-        (0, 0), (0, -40), (0, 40), (-40, 0), (40, 0),
-        (0, -80), (0, 80), (-80, 0), (80, 0),
-        (-40, -40), (40, -40), (-40, 40), (40, 40),
+
+    # Search centre first, then small/medium offsets. All candidates are clamped
+    # to the safe rectangle so the product is not pushed under frame graphics.
+    offsets = [(0, 0)]
+    for step in (30, 60, 90, 130):
+        offsets.extend([
+            (0, -step), (0, step), (-step, 0), (step, 0),
+            (-step, -step), (step, -step), (-step, step), (step, step),
+        ])
+    # Exact safe-area anchors are useful for very wide or very tall parts.
+    anchor_positions = [
+        (sx, sy), (sx + (sw - pw) // 2, sy), (sx + sw - pw, sy),
+        (sx, sy + (sh - ph) // 2), (sx + sw - pw, sy + (sh - ph) // 2),
+        (sx, sy + sh - ph), (sx + (sw - pw) // 2, sy + sh - ph), (sx + sw - pw, sy + sh - ph),
     ]
+
     positions = []
     for ox, oy in offsets:
         x = min(max(sx, cx + ox), sx + max(0, sw - pw))
@@ -76,7 +93,19 @@ def _candidate_positions(safe_rect: Tuple[int, int, int, int], product_size: Tup
         pos = (int(x), int(y))
         if pos not in positions:
             positions.append(pos)
+    for ax, ay in anchor_positions:
+        x = min(max(sx, ax), sx + max(0, sw - pw))
+        y = min(max(sy, ay), sy + max(0, sh - ph))
+        pos = (int(x), int(y))
+        if pos not in positions:
+            positions.append(pos)
     return positions
+
+
+def _resize_keep_ratio(image: Image.Image, scale: float) -> Image.Image:
+    new_w = max(1, int(round(image.width * scale)))
+    new_h = max(1, int(round(image.height * scale)))
+    return image.resize((new_w, new_h), Image.LANCZOS)
 
 
 def compose_on_canvas(
@@ -101,12 +130,12 @@ def compose_on_canvas(
     max_fit_attempts: int = 12,
     allowed_frame_overlap_ratio: float = 0.0005,
 ) -> FitResult:
-    product_rgba = crop_alpha(product_rgba, padding=max(4, canvas_size // 220))
+    product_rgba = crop_alpha(product_rgba, padding=max(6, canvas_size // 180))
 
     if frame_image is None:
         scale = min(product_max_size / product_rgba.width, product_max_size / product_rgba.height)
-        new_size = (max(1, int(product_rgba.width * scale)), max(1, int(product_rgba.height * scale)))
-        product = product_rgba.resize(new_size, Image.LANCZOS)
+        scale = max(scale, 0.01)
+        product = _resize_keep_ratio(product_rgba, scale)
         canvas = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
         x = (canvas_size - product.width) // 2
         y = (canvas_size - product.height) // 2
@@ -122,47 +151,60 @@ def compose_on_canvas(
     safe_h = max(1, safe_y2 - safe_y1)
 
     if auto_fit_to_frame:
-        max_w = min(safe_w * safe_area_padding_ratio, canvas_size * max_product_width_ratio, product_max_size)
-        max_h = min(safe_h * safe_area_padding_ratio, canvas_size * max_product_height_ratio, product_max_size)
+        target_w = min(safe_w * safe_area_padding_ratio, canvas_size * max_product_width_ratio, product_max_size)
+        target_h = min(safe_h * safe_area_padding_ratio, canvas_size * max_product_height_ratio, product_max_size)
+        # target_product_*_ratio is interpreted as a canvas-level target cap,
+        # not a safe-rectangle cap. This keeps products large while respecting
+        # the frame safe area and aspect ratio.
+        if target_product_width_ratio > 0:
+            target_w = min(target_w, canvas_size * target_product_width_ratio)
+        if target_product_height_ratio > 0:
+            target_h = min(target_h, canvas_size * target_product_height_ratio)
     else:
-        max_w = safe_w * safe_area_padding_ratio
-        max_h = safe_h * safe_area_padding_ratio
+        target_w = safe_w * safe_area_padding_ratio
+        target_h = safe_h * safe_area_padding_ratio
 
-    scale = min(max_w / product_rgba.width, max_h / product_rgba.height)
+    scale = min(target_w / product_rgba.width, target_h / product_rgba.height)
     scale = max(scale, 0.01)
     protected = _frame_protected_mask(frame, canvas_size, frame_clearance_px) if frame_collision_check else np.zeros((canvas_size, canvas_size), dtype=np.uint8)
 
     best = None
     best_overlap = 999.0
     best_note = ""
-    attempts = max(1, int(max_fit_attempts))
-    step = min(0.99, max(0.80, float(scale_down_step)))
+    attempts = max(24, int(max_fit_attempts))
+    step = min(0.99, max(0.82, float(scale_down_step)))
 
     for i in range(attempts):
         trial_scale = scale * (step ** i)
-        new_w = max(1, int(product_rgba.width * trial_scale))
-        new_h = max(1, int(product_rgba.height * trial_scale))
+        product = _resize_keep_ratio(product_rgba, trial_scale)
+        new_w, new_h = product.size
         if new_w > safe_w or new_h > safe_h:
             continue
-        product = product_rgba.resize((new_w, new_h), Image.LANCZOS)
         for x, y in _candidate_positions((safe_x1, safe_y1, safe_w, safe_h), (new_w, new_h)):
             overlap = _overlap_ratio(product, x, y, protected, canvas_size) if frame_collision_check else 0.0
             if overlap < best_overlap:
                 best = (product, x, y, trial_scale)
                 best_overlap = overlap
-                best_note = f"fit_attempt={i+1}"
+                best_note = f"fit_attempt={i + 1}"
             if overlap <= allowed_frame_overlap_ratio:
                 canvas = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
                 canvas.alpha_composite(product, (x, y))
                 canvas.alpha_composite(frame, (0, 0))
-                return FitResult(canvas.convert("RGB"), x, y, trial_scale, overlap, f"auto_fit_ok; attempt={i+1}")
+                return FitResult(canvas.convert("RGB"), x, y, trial_scale, overlap, f"auto_fit_ok; attempt={i + 1}")
 
     if best is None:
         raise ValueError("Could not fit product into frame safe area.")
 
     product, x, y, final_scale = best
     canvas = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
-    canvas.alpha_composite(product, (x, y))
-    canvas.alpha_composite(frame, (0, 0))
-    note = f"auto_fit_best_effort; {best_note}; overlap={best_overlap:.5f}"
+    if best_overlap <= allowed_frame_overlap_ratio:
+        canvas.alpha_composite(product, (x, y))
+        canvas.alpha_composite(frame, (0, 0))
+        note = f"auto_fit_best_effort; {best_note}; overlap={best_overlap:.5f}"
+    else:
+        # Last-resort safety: if no collision-free placement is possible, place
+        # the frame below the product so the frame never covers the product.
+        canvas.alpha_composite(frame, (0, 0))
+        canvas.alpha_composite(product, (x, y))
+        note = f"frame_under_product_safety; {best_note}; overlap_if_frame_on_top={best_overlap:.5f}"
     return FitResult(canvas.convert("RGB"), x, y, final_scale, best_overlap, note)
