@@ -1,0 +1,9 @@
+Put product folders here.
+
+Example:
+INPUT/A12345__51360-SDA-A01/main.jpg
+INPUT/A12345__51360-SDA-A01/front.jpg
+INPUT/A12345__51360-SDA-A01/side.jpg
+INPUT/A12345__51360-SDA-A01/label.jpg
+
+Then double-click START_MAC.command or START_WINDOWS.bat.

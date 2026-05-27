@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$APP_DIR"
+open -a Terminal "$APP_DIR/START_MAC.command"

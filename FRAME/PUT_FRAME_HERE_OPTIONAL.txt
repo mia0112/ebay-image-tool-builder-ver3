@@ -1,0 +1,2 @@
+Optional: put one frame PNG here.
+If this folder is empty, the tool uses a plain white 1600x1600 canvas.

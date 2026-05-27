@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Build artifacts
+build/
+dist/
+release_artifacts/
+*.spec
+
+# Runtime logs and outputs
+run_log.txt
+INPUT/**/output/
+INPUT/**/debug/
+
+# Local secrets
+CONFIG/api_key.txt
+CONFIG/gemini_api_key.txt
+
+# OS
+.DS_Store
+Thumbs.db

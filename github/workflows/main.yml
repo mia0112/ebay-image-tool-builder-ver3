@@ -1,0 +1,53 @@
+name: Build Standalone Packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact_name: eBayImageTool_Windows_standalone
+          - os: macos-latest
+            platform: mac
+            artifact_name: eBayImageTool_macOS_standalone
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build runtime Windows
+        if: matrix.platform == 'windows'
+        shell: cmd
+        run: |
+          pyinstaller --noconfirm --clean --onedir --name eBayImageToolCore --collect-all cv2 --collect-all PIL --collect-all numpy --collect-all google.genai --collect-all pydantic app_auto.py
+          python build_tools\package_release.py --platform windows
+
+      - name: Build runtime Mac
+        if: matrix.platform == 'mac'
+        run: |
+          pyinstaller --noconfirm --clean --onedir --name eBayImageToolCore --collect-all cv2 --collect-all PIL --collect-all numpy --collect-all google.genai --collect-all pydantic app_auto.py
+          python build_tools/package_release.py --platform mac
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: release_artifacts/${{ matrix.artifact_name }}.zip
