@@ -53,3 +53,9 @@ V3.1 update:
 - Giu nguyen flow Gemini -> OpenCV -> frame cua v3.
 - Giam viền đen/con sót dọc mép bằng rebuild silhouette cho single-object mask.
 - Giam xoa nen lem nhem / lỗ thủng nhỏ trong san pham bang cach fill cac lo alpha nho, nhung van giu cac lo cau truc lon (vi du center bore).
+
+
+V3.2 update:
+- Tightened Gemini analysis prompt to aggressively detect bottom disclaimers, tiny leftover text, and listing-border slivers.
+- Added strict text-sweep retry when Gemini QA flags leftover_text in the final framed image.
+- Still keeps the same closed flow: Gemini analyze -> OpenCV alpha cleanup -> add frame.

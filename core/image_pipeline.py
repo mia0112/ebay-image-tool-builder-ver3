@@ -153,6 +153,41 @@ def _remove_with_gemini_guided_opencv(
     return rgba, note, analysis
 
 
+def _retry_leftover_text_cleanup(
+    image: Image.Image,
+    rgba: Image.Image,
+    config: AppConfig,
+    gemini_client: Optional[GeminiVisionClient],
+    debug_dir: Optional[Path],
+    stem: str,
+) -> Tuple[Image.Image, str, Optional[Dict]]:
+    if gemini_client is None:
+        return rgba, "", None
+    preview, sx, sy = make_preview(image, config.gemini_preview_max_size)
+    raw_analysis, used_model = gemini_client.analyze_strict_sweep(preview)
+    analysis = scale_analysis(raw_analysis, sx, sy, image.width, image.height)
+    ok, reason = validate_analysis(analysis, image.width, image.height, config.gemini_confidence_threshold)
+    if debug_dir:
+        _save_json(debug_dir / f"{stem}_06b_gemini_strict_sweep.json", {"model": used_model, "raw": raw_analysis, "scaled": analysis, "valid": ok, "reason": reason})
+    if not ok:
+        raise GeminiVisionError(f"strict text sweep invalid: {reason}")
+    component_mode = _component_mode_from_analysis(config, analysis)
+    mask = guided_opencv_mask(
+        image,
+        analysis,
+        threshold=config.local_bg_threshold,
+        bbox_expand_ratio=config.opencv_bbox_expand_ratio,
+        component_mode=component_mode,
+        keep_small_accessories=config.keep_small_accessories,
+    )
+    rerun = rgba_from_mask(image, mask)
+    rerun = refine_alpha(rerun, analysis=analysis, component_mode=component_mode, keep_small_accessories=config.keep_small_accessories)
+    if debug_dir:
+        Image.fromarray(mask).save(debug_dir / f"{stem}_06c_strict_sweep_mask.png")
+        rerun.save(debug_dir / f"{stem}_06d_strict_sweep_cutout.png")
+    return rerun, f"strict_text_sweep; model={used_model}", analysis
+
+
 def _remove_with_api(
     image: Image.Image,
     img_name: str,
@@ -326,6 +361,19 @@ def process_product_folder(
                     # should be handled by the first Gemini analysis pass.
                     if config.qa_retry_once and not bool(qa.get("pass", False)):
                         issue_types = {str(i.get("type", "")) for i in qa.get("issues", []) if isinstance(i, dict)}
+                        if "leftover_text" in issue_types:
+                            try:
+                                rgba_retry, retry_note, analysis_retry = _retry_leftover_text_cleanup(
+                                    image, rgba, config, gemini_client, debug_dir, img_path.stem
+                                )
+                                fit = _compose_final(rgba_retry, frame_image, config)
+                                final_image = fit.image
+                                rgba = rgba_retry
+                                if analysis_retry is not None:
+                                    analysis = analysis_retry
+                                qa_note += f"; retried_strict_text_sweep={retry_note}"
+                            except Exception as exc:
+                                qa_note += f"; strict_text_sweep_failed={exc}"
                         if "frame_overlap" in issue_types:
                             old_w, old_h = config.max_product_width_ratio, config.max_product_height_ratio
                             config.max_product_width_ratio *= 0.92

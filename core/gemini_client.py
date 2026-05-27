@@ -11,6 +11,7 @@ from PIL import Image
 
 from .gemini_prompts import (
     GEMINI_ANALYSIS_PROMPT,
+    GEMINI_ANALYSIS_PROMPT_STRICT_SWEEP,
     GEMINI_ANALYSIS_SCHEMA,
     GEMINI_QA_PROMPT,
     GEMINI_QA_SCHEMA,
@@ -116,6 +117,16 @@ class GeminiVisionClient:
         data = self._generate_json(
             image=preview_image,
             prompt=GEMINI_ANALYSIS_PROMPT,
+            schema=GEMINI_ANALYSIS_SCHEMA,
+            model=self.model,
+        )
+        return data, self.model
+
+
+    def analyze_strict_sweep(self, preview_image: Image.Image) -> Tuple[Dict[str, Any], str]:
+        data = self._generate_json(
+            image=preview_image,
+            prompt=GEMINI_ANALYSIS_PROMPT_STRICT_SWEEP,
             schema=GEMINI_ANALYSIS_SCHEMA,
             model=self.model,
         )
