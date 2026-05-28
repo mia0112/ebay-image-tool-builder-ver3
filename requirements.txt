@@ -3,3 +3,6 @@ requests>=2.31.0
 numpy>=1.26.0
 opencv-python>=4.8.0
 google-genai>=1.0.0
+
+rembg>=2.0.57
+onnxruntime>=1.16.0

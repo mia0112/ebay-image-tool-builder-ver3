@@ -96,7 +96,7 @@ def _ensure_default_files() -> None:
 def main() -> int:
     LOG_FILE.write_text("", encoding="utf-8")
     print("=" * 70)
-    print("eBay Image Tool - Gemini Guided OpenCV")
+    print("eBay Image Tool - Gemini + rembg + OpenCV")
     print("=" * 70)
     print("Flow:")
     print("1) Put product folders into INPUT")
@@ -114,6 +114,8 @@ def main() -> int:
         log(f"Frame: {cfg.frame_file if cfg.frame_file else 'plain white canvas'}")
         log(f"Mode: {cfg.mode}")
         log(f"Flow: {cfg.remove_background_flow}")
+        if cfg.remove_background_flow == "gemini_rembg_opencv":
+            log(f"rembg model: {getattr(cfg, 'rembg_model', 'isnet-general-use')} | alpha_matting={getattr(cfg, 'rembg_alpha_matting', True)}")
         log(f"Gemini: {'enabled' if cfg.gemini_enabled else 'disabled'} | model={cfg.gemini_model}")
         log(f"remove.bg fallback: {'configured' if cfg.api_key else 'not configured'}")
         log(f"Component mode: {cfg.component_mode}")

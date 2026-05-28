@@ -7,11 +7,13 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from PIL import Image
+import numpy as np
 
 from .api_bg_remove import BackgroundRemovalAPIClient, BackgroundRemovalError
 from .config import AppConfig
 from .frame_composer import FitResult, compose_on_canvas
 from .gemini_client import GeminiVisionClient, GeminiVisionError
+from .rembg_engine import RembgConfig, RembgEngineError, rembg_alpha_mask
 from .mask_cleaner import (
     guided_opencv_mask,
     load_image_rgb,
@@ -153,6 +155,75 @@ def _remove_with_gemini_guided_opencv(
     return rgba, note, analysis
 
 
+def _analyze_with_gemini(
+    image: Image.Image,
+    config: AppConfig,
+    gemini_client: GeminiVisionClient,
+    debug_dir: Optional[Path],
+    stem: str,
+) -> Tuple[Dict, str]:
+    preview, sx, sy = make_preview(image, config.gemini_preview_max_size)
+    if debug_dir:
+        preview.save(debug_dir / f"{stem}_01_preview.jpg", quality=92)
+
+    raw_analysis, used_model = gemini_client.analyze_with_retry(
+        preview,
+        threshold=config.gemini_confidence_threshold,
+        retry_on_low_confidence=config.gemini_retry_on_low_confidence,
+    )
+    analysis = scale_analysis(raw_analysis, sx, sy, image.width, image.height)
+    ok, reason = validate_analysis(analysis, image.width, image.height, config.gemini_confidence_threshold)
+    if debug_dir:
+        _save_json(debug_dir / f"{stem}_02_gemini_analysis.json", {"model": used_model, "raw": raw_analysis, "scaled": analysis, "valid": ok, "reason": reason})
+    if not ok:
+        raise GeminiVisionError(reason)
+    return analysis, used_model
+
+
+def _remove_with_gemini_rembg_opencv(
+    image: Image.Image,
+    config: AppConfig,
+    gemini_client: GeminiVisionClient,
+    debug_dir: Optional[Path],
+    stem: str,
+) -> Tuple[Image.Image, str, Dict]:
+    # Flow: Gemini analyze -> rembg AI alpha -> OpenCV alpha cleanup -> frame.
+    # RGB output is still the original image RGB; rembg is used only for alpha.
+    analysis, used_model = _analyze_with_gemini(image, config, gemini_client, debug_dir, stem)
+
+    if debug_dir:
+        image.save(debug_dir / f"{stem}_03_mask_source_rgb_unchanged.jpg", quality=95)
+
+    rembg_cfg = RembgConfig(
+        model=getattr(config, "rembg_model", "isnet-general-use"),
+        alpha_matting=bool(getattr(config, "rembg_alpha_matting", True)),
+        foreground_threshold=int(getattr(config, "rembg_foreground_threshold", 240)),
+        background_threshold=int(getattr(config, "rembg_background_threshold", 10)),
+        erode_size=int(getattr(config, "rembg_erode_size", 10)),
+    )
+    mask = rembg_alpha_mask(image, rembg_cfg)
+
+    component_mode = _component_mode_from_analysis(config, analysis)
+    rgba = rgba_from_mask(image, mask)
+    rgba = refine_alpha(
+        rgba,
+        analysis=analysis,
+        component_mode=component_mode,
+        keep_small_accessories=config.keep_small_accessories,
+    )
+
+    if debug_dir:
+        Image.fromarray(mask).save(debug_dir / f"{stem}_04_rembg_mask.png")
+        rgba.save(debug_dir / f"{stem}_05_cutout.png")
+
+    note = (
+        f"gemini_rembg_opencv; gemini_model={used_model}; "
+        f"rembg_model={rembg_cfg.model}; product_type={analysis.get('product_type')}; "
+        f"confidence={float(analysis.get('confidence') or 0):.2f}"
+    )
+    return rgba, note, analysis
+
+
 def _retry_leftover_text_cleanup(
     image: Image.Image,
     rgba: Image.Image,
@@ -172,18 +243,12 @@ def _retry_leftover_text_cleanup(
     if not ok:
         raise GeminiVisionError(f"strict text sweep invalid: {reason}")
     component_mode = _component_mode_from_analysis(config, analysis)
-    mask = guided_opencv_mask(
-        image,
-        analysis,
-        threshold=config.local_bg_threshold,
-        bbox_expand_ratio=config.opencv_bbox_expand_ratio,
-        component_mode=component_mode,
-        keep_small_accessories=config.keep_small_accessories,
-    )
-    rerun = rgba_from_mask(image, mask)
-    rerun = refine_alpha(rerun, analysis=analysis, component_mode=component_mode, keep_small_accessories=config.keep_small_accessories)
+    # Do not rebuild alpha from white-threshold OpenCV here; that can bring tiny
+    # disclaimer text back. Keep the current alpha and apply strict Gemini
+    # remove_regions + OpenCV component cleanup to alpha only.
+    rerun = refine_alpha(rgba.convert("RGBA"), analysis=analysis, component_mode=component_mode, keep_small_accessories=config.keep_small_accessories)
     if debug_dir:
-        Image.fromarray(mask).save(debug_dir / f"{stem}_06c_strict_sweep_mask.png")
+        Image.fromarray(np.array(rerun.convert("RGBA"))[:, :, 3]).save(debug_dir / f"{stem}_06c_strict_sweep_alpha.png")
         rerun.save(debug_dir / f"{stem}_06d_strict_sweep_cutout.png")
     return rerun, f"strict_text_sweep; model={used_model}", analysis
 
@@ -230,6 +295,13 @@ def _background_remove(
 ) -> Tuple[Image.Image, str, float, Optional[Dict]]:
     analysis: Optional[Dict] = None
     errors: List[str] = []
+
+    if config.remove_background_flow == "gemini_rembg_opencv" and gemini_client is not None:
+        try:
+            rgba, note, analysis = _remove_with_gemini_rembg_opencv(image, config, gemini_client, debug_dir, stem)
+            return rgba, note, 0.0, analysis
+        except Exception as exc:
+            errors.append(f"Gemini/rembg/OpenCV failed: {exc}")
 
     if config.remove_background_flow == "gemini_guided_opencv" and gemini_client is not None:
         try:
@@ -391,7 +463,7 @@ def process_product_folder(
 
             output_file = output_dir / f"{img_path.stem}_final.jpg"
             final_image.save(output_file, format="JPEG", quality=95)
-            method = "api" if api_cost else ("gemini_opencv" if analysis else "opencv")
+            method = "api" if api_cost else ("gemini_rembg_opencv" if config.remove_background_flow == "gemini_rembg_opencv" and analysis else ("gemini_opencv" if analysis else "opencv"))
             note = f"{remove_note}; fit={fit.note}; scale={fit.scale:.3f}; frame_overlap={fit.overlap_ratio:.5f}{qa_note}"
             results.append(ImageResult(img_path.name, output_file.name, method, api_cost, "done", note))
             log(f"- {img_path.name}: OK → {output_file.name} [{method}] {note}")

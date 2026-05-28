@@ -24,3 +24,11 @@ V3.2 update:
 - Tightened Gemini analysis prompt to aggressively detect bottom disclaimers, tiny leftover text, and listing-border slivers.
 - Added strict text-sweep retry when Gemini QA flags leftover_text in the final framed image.
 - Still keeps the same closed flow: Gemini analyze -> OpenCV alpha cleanup -> add frame.
+
+
+V3.3 open-source rembg engine:
+- New default flow: Gemini analyze -> rembg AI alpha -> OpenCV alpha cleanup -> add frame.
+- rembg is open-source and replaces OpenCV white-background threshold as the main cutout engine.
+- OpenCV still only edits alpha mask; RGB remains original source image RGB.
+- First run may download the selected rembg model. Keep internet on for first run.
+- Install dependencies when running source mode: pip install -r requirements.txt

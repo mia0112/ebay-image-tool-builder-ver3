@@ -40,7 +40,7 @@ class AppConfig:
     max_cost_per_mpn_test: float = 0.50
 
     # Background processing
-    remove_background_flow: str = "gemini_guided_opencv"  # gemini_guided_opencv | removebg_api | opencv_local
+    remove_background_flow: str = "gemini_rembg_opencv"  # gemini_rembg_opencv | gemini_guided_opencv | removebg_api | opencv_local
     fallback_mode: str = "removebg_api_then_opencv"      # removebg_api | opencv_local | removebg_api_then_opencv
     local_bg_threshold: int = 28
     local_bg_enabled: bool = False
@@ -50,6 +50,13 @@ class AppConfig:
     keep_small_accessories: bool = True
     opencv_bbox_expand_ratio: float = 0.08
     source_trim_uniform_border: bool = False
+
+    # Open-source AI background-removal engine. Used when remove_background_flow=gemini_rembg_opencv.
+    rembg_model: str = "isnet-general-use"  # isnet-general-use | u2net | u2netp
+    rembg_alpha_matting: bool = True
+    rembg_foreground_threshold: int = 240
+    rembg_background_threshold: int = 10
+    rembg_erode_size: int = 10
 
     # Frame fitting
     create_output_subfolder: bool = True
